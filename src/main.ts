@@ -16,15 +16,13 @@ const PROJECTIONS: Projection[] = [
   { title: '视图 3 · ACD', keep: [0, 2, 3], hidden: 1 },
   { title: '视图 4 · BCD', keep: [1, 2, 3], hidden: 0 },
 ]
-const MOVE_SPEED = 3.1
 const GOAL_RADIUS = 0.48
 const CHECK_RADIUS = 0.55
-const STEP = 1 / 60
 
 const add = (v: V4, axis: number, amount: number): V4 => { const r = [...v] as V4; r[axis] += amount; return r }
 const distance4 = (a: V4, b: V4) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2], a[3] - b[3])
 const clamp = (n: number, min: number, max: number) => Math.max(min, Math.min(max, n))
-const fmt = (n: number) => n.toFixed(2)
+const fmt = (n: number) => Math.round(n).toString()
 const lerp4 = (a: V4, b: V4, t: number): V4 => [0, 1, 2, 3].map(i => a[i] + (b[i] - a[i]) * t) as V4
 
 function seededRandom(seed = Math.floor(Math.random() * 0xffffffff)) {
@@ -132,14 +130,12 @@ class Viewport {
 class App {
   private level = randomLevel()
   private readonly views: Viewport[] = []
-  private readonly keys = new Set<string>()
   private trail: V4[] = []
   private trailVisible = true
   private checkpointReached = false
   private crashed = false
   private won = false
   private expanded = -1
-  private lastSafe: V4 = [...this.level.start]
   private readonly root: HTMLElement
   private coordEl!: HTMLElement
   private distanceEl!: HTMLElement
@@ -149,16 +145,38 @@ class App {
   private hintEl!: HTMLElement
   constructor() { this.root = document.querySelector('#app')!; this.renderShell(); this.bind(); this.newGame(); requestAnimationFrame(this.frame) }
   private renderShell() {
-    this.root.innerHTML = `<header class="topbar"><div class="brand"><span class="brand-mark">✦</span><div><strong>QUADPOINT <i>4D</i></strong><small>随机空间导航实验台</small></div></div><div class="run-state"><span class="live-dot"></span><span id="status">准备生成</span><span class="divider"></span><span id="seed">RUN —</span></div><div class="actions"><button id="new-game" class="primary">↻ 新局</button><button id="layout-btn">▦ 四视图</button><button id="trail-btn">⌁ 轨迹</button></div></header><main><aside class="hud"><section class="hud-block"><div class="eyebrow">PLAYER POINT / P</div><div id="coords" class="coords">(0.00, 0.00, 0.00, 0.00)</div><div class="axis-legend"><span><b class="a">a</b> W / S</span><span><b class="b">b</b> A / D</span><span><b class="c">c</b> Q / E</span><span><b class="d">d</b> R / F</span></div></section><section class="hud-block metric"><div><span>四维距离 / DISTANCE</span><strong id="distance">0.00</strong></div><div><span>移动点数 / TRAIL</span><strong id="trail-count">0</strong></div></section><section class="hud-block"><div class="eyebrow">MISSION GATES</div><div id="gate" class="gate">门禁检查中</div><div class="checkpoint"><span class="checkpoint-dot"></span><span>检查点 C</span><em id="checkpoint">未经过</em></div></section><section class="hud-block rules"><div class="eyebrow">操作提示</div><p>拖拽旋转 · 右键平移<br>滚轮缩放 · 双击视图放大</p><p class="muted">本局结束后不保存任何状态。点击“新局”即可重新随机生成。</p></section><div id="hint" class="hint">沿安全路径寻找检查点，再让四维坐标接近 T。</div></aside><section class="stage"><div id="views" class="views"></div><div class="stage-footer"><span><b class="axis-chip a-bg">a</b> 橙红</span><span><b class="axis-chip b-bg">b</b> 青绿</span><span><b class="axis-chip c-bg">c</b> 靛蓝</span><span><b class="axis-chip d-bg">d</b> 金黄</span><span class="legend-key obstacle-key"></span>4D 障碍切片</div></section></main><footer class="footer"><span>每局随机生成 · 保证存在可通行路径</span><span>QuadPoint 4D / build 01</span></footer>`
+    this.root.innerHTML = `<header class="topbar"><div class="brand"><span class="brand-mark">✦</span><div><strong>QUADPOINT <i>4D</i></strong><small>随机空间导航实验台</small></div></div><div class="run-state"><span class="live-dot"></span><span id="status">准备生成</span><span class="divider"></span><span id="seed">RUN —</span></div><div class="actions"><button id="new-game" class="primary">↻ 新局</button><button id="layout-btn">▦ 四视图</button><button id="trail-btn">⌁ 轨迹</button></div></header><main><aside class="hud"><section class="hud-block"><div class="eyebrow">PLAYER POINT / P</div><div id="coords" class="coords">(0.00, 0.00, 0.00, 0.00)</div><div class="axis-legend"><span><b class="a">a</b> W / S</span><span><b class="b">b</b> A / D</span><span><b class="c">c</b> Q / E</span><span><b class="d">d</b> R / F</span></div></section><section class="hud-block metric"><div><span>四维距离 / DISTANCE</span><strong id="distance">0.00</strong></div><div><span>移动点数 / TRAIL</span><strong id="trail-count">0</strong></div></section><section class="hud-block"><div class="eyebrow">MISSION GATES</div><div id="gate" class="gate">门禁检查中</div><div class="checkpoint"><span class="checkpoint-dot"></span><span>检查点 C</span><em id="checkpoint">未经过</em></div></section><section class="hud-block rules"><div class="eyebrow">操作提示</div><p>每次按键移动 1 格<br>拖拽旋转 · 右键平移 · 滚轮缩放</p><p class="muted">本局结束后不保存任何状态。点击“新局”即可重新随机生成。</p></section><div id="hint" class="hint">沿安全路径寻找检查点，再让四维坐标接近 T。</div></aside><section class="stage"><div id="views" class="views"></div><div class="stage-footer"><span><b class="axis-chip a-bg">a</b> 橙红</span><span><b class="axis-chip b-bg">b</b> 青绿</span><span><b class="axis-chip c-bg">c</b> 靛蓝</span><span><b class="axis-chip d-bg">d</b> 金黄</span><span class="legend-key obstacle-key"></span>4D 障碍切片</div></section></main><footer class="footer"><span>每局随机生成 · 保证存在可通行路径</span><span>QuadPoint 4D / build 01</span></footer>`
     this.coordEl = document.querySelector('#coords')!; this.distanceEl = document.querySelector('#distance')!; this.statusEl = document.querySelector('#status')!; this.gateEl = document.querySelector('#gate')!; this.seedEl = document.querySelector('#seed')!; this.hintEl = document.querySelector('#hint')!
     const views = document.querySelector('#views')!
     PROJECTIONS.forEach((projection, i) => { const panel = document.createElement('article'); panel.className = 'view-panel'; panel.innerHTML = `<div class="view-head"><span>${projection.title}</span><small>隐藏 ${AXES[projection.hidden]}</small></div><div class="view-canvas"></div>`; views.appendChild(panel); const viewport = new Viewport(panel.querySelector('.view-canvas')!, projection, () => this.expand(i)); this.views.push(viewport) })
   }
-  private bind() { document.querySelector('#trail-btn')!.addEventListener('click', () => { this.trailVisible = !this.trailVisible; document.querySelector('#trail-btn')!.textContent = this.trailVisible ? '⌁ 轨迹' : '⌁ 隐藏轨迹' }); window.addEventListener('keydown', e => { if (['KeyW', 'KeyS', 'KeyA', 'KeyD', 'KeyQ', 'KeyE', 'KeyR', 'KeyF'].includes(e.code)) { e.preventDefault(); this.keys.add(e.code) } if (e.code === 'Escape') this.expand(-1) }); window.addEventListener('keyup', e => this.keys.delete(e.code)); document.querySelector('#new-game')!.addEventListener('click', () => this.newGame()); document.querySelector('#layout-btn')!.addEventListener('click', () => this.expand(this.expanded >= 0 ? -1 : 0)); }
+  private bind() { document.querySelector('#trail-btn')!.addEventListener('click', () => { this.trailVisible = !this.trailVisible; document.querySelector('#trail-btn')!.textContent = this.trailVisible ? '⌁ 轨迹' : '⌁ 隐藏轨迹' }); window.addEventListener('keydown', e => { const steps: Record<string, [number, number]> = { KeyW: [0, 1], KeyS: [0, -1], KeyD: [1, 1], KeyA: [1, -1], KeyE: [2, 1], KeyQ: [2, -1], KeyR: [3, 1], KeyF: [3, -1] }; const step = steps[e.code]; if (step && !e.repeat) { e.preventDefault(); this.step(step[0], step[1]) } if (e.code === 'Escape') this.expand(-1) }); document.querySelector('#new-game')!.addEventListener('click', () => this.newGame()); document.querySelector('#layout-btn')!.addEventListener('click', () => this.expand(this.expanded >= 0 ? -1 : 0)); }
   private expand(index: number) { this.expanded = index; document.querySelector('#views')!.classList.toggle('single-view', index >= 0); this.views.forEach((v, i) => v.setExpanded(i === index)) }
-  private newGame() { this.level = randomLevel(); this.trail = [[...this.level.start]]; this.lastSafe = [...this.level.start]; this.checkpointReached = false; this.crashed = false; this.won = false; this.statusEl.textContent = '探索中'; this.seedEl.textContent = `RUN ${Math.random().toString(36).slice(2, 8).toUpperCase()}`; this.hintEl.textContent = `门禁轴 ${AXES[this.level.gateAxis]} ∈ [${fmt(this.level.gateMin)}, ${fmt(this.level.gateMax)}] · 先找到青绿色检查点`; }
-  private move(dt: number) { if (this.won) return; const dir: V4 = [0, 0, 0, 0]; const fast = this.keys.has('ShiftLeft') || this.keys.has('ShiftRight'); const speed = MOVE_SPEED * (fast ? 1.8 : 1); if (this.keys.has('KeyW')) dir[0] += 1; if (this.keys.has('KeyS')) dir[0] -= 1; if (this.keys.has('KeyD')) dir[1] += 1; if (this.keys.has('KeyA')) dir[1] -= 1; if (this.keys.has('KeyE')) dir[2] += 1; if (this.keys.has('KeyQ')) dir[2] -= 1; if (this.keys.has('KeyR')) dir[3] += 1; if (this.keys.has('KeyF')) dir[3] -= 1; const mag = Math.hypot(...dir); if (!mag) return; const candidate = dir.map(n => n / mag * speed * dt) as V4; let next = [0, 1, 2, 3].reduce((p, i) => add(p, i, candidate[i]), [...this.level.player] as V4); next = next.map(n => clamp(n, -8, 8)) as V4; if (this.level.obstacles.some(o => insideObstacle(next, o))) { this.crashed = true; this.level.player = [...this.lastSafe]; this.statusEl.textContent = '撞入障碍 · 已退回安全点'; this.hintEl.textContent = '点落入了 4D 障碍区域。换一个隐藏轴切片继续寻找路径。'; return } this.crashed = false; this.level.player = next; this.lastSafe = [...next]; if (distance4(next, this.level.checkpoint) < CHECK_RADIUS) { this.checkpointReached = true; this.hintEl.textContent = '检查点已激活。现在寻找终点 T。' } if (this.checkpointReached && next[this.level.gateAxis] >= this.level.gateMin && next[this.level.gateAxis] <= this.level.gateMax && distance4(next, this.level.target) < GOAL_RADIUS) { this.won = true; this.statusEl.textContent = '已抵达终点'; this.hintEl.textContent = '送点完成。点击“新局”生成完全不同的四维世界。' } if (distance4(next, this.lastSafe) > 0.02) this.trail.push([...next]); }
-  private frame = () => { this.move(STEP); const d = distance4(this.level.player, this.level.target); this.coordEl.textContent = `(${this.level.player.map(fmt).join(', ')})`; this.distanceEl.textContent = d.toFixed(2); document.querySelector('#trail-count')!.textContent = String(this.trail.length); document.querySelector('#checkpoint')!.textContent = this.checkpointReached ? '已激活' : '未经过'; this.gateEl.textContent = `${AXES[this.level.gateAxis]} ∈ [${fmt(this.level.gateMin)}, ${fmt(this.level.gateMax)}]`; this.gateEl.className = `gate ${this.checkpointReached ? 'open' : ''}`; this.views.forEach(v => { v.sync(this.level, this.trailVisible ? this.trail : [], this.checkpointReached, this.crashed); v.render() }); requestAnimationFrame(this.frame) }
+  private newGame() { this.level = randomLevel(); this.trail = [[...this.level.start]]; this.checkpointReached = false; this.crashed = false; this.won = false; this.statusEl.textContent = '探索中'; this.seedEl.textContent = `RUN ${Math.random().toString(36).slice(2, 8).toUpperCase()}`; this.hintEl.textContent = `门禁轴 ${AXES[this.level.gateAxis]} ∈ [${fmt(this.level.gateMin)}, ${fmt(this.level.gateMax)}] · 先找到青绿色检查点`; }
+  private step(axis: number, direction: number) {
+    if (this.won) return
+    const next = add([...this.level.player] as V4, axis, direction)
+    next[axis] = clamp(next[axis], -8, 8)
+    if (this.level.obstacles.some(o => insideObstacle(next, o))) {
+      this.crashed = true
+      this.statusEl.textContent = '撞入障碍 · 点保持原位'
+      this.hintEl.textContent = '这一步会落入 4D 障碍区域。换一个轴或方向，每次按键只移动 1 格。'
+      return
+    }
+    this.crashed = false
+    this.level.player = next
+    this.trail.push([...next])
+    if (distance4(next, this.level.checkpoint) < CHECK_RADIUS) {
+      this.checkpointReached = true
+      this.hintEl.textContent = '检查点已激活。现在寻找终点 T。每次按键移动 1 格。'
+    }
+    if (this.checkpointReached && next[this.level.gateAxis] >= this.level.gateMin && next[this.level.gateAxis] <= this.level.gateMax && distance4(next, this.level.target) < GOAL_RADIUS) {
+      this.won = true
+      this.statusEl.textContent = '已抵达终点'
+      this.hintEl.textContent = '送点完成。点击“新局”生成完全不同的四维世界。'
+    }
+  }
+  private frame = () => { const d = distance4(this.level.player, this.level.target); this.coordEl.textContent = `(${this.level.player.map(fmt).join(', ')})`; this.distanceEl.textContent = d.toFixed(2); document.querySelector('#trail-count')!.textContent = String(this.trail.length); document.querySelector('#checkpoint')!.textContent = this.checkpointReached ? '已激活' : '未经过'; this.gateEl.textContent = `${AXES[this.level.gateAxis]} ∈ [${fmt(this.level.gateMin)}, ${fmt(this.level.gateMax)}]`; this.gateEl.className = `gate ${this.checkpointReached ? 'open' : ''}`; this.views.forEach(v => { v.sync(this.level, this.trailVisible ? this.trail : [], this.checkpointReached, this.crashed); v.render() }); requestAnimationFrame(this.frame) }
 }
 
 new App()
