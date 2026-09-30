@@ -1,0 +1,1 @@
+{"schemaVersion":2,"title":"QuadPoint 4D","description":"在同一个随机生成的四维世界里，操控无体积点穿过障碍、检查点和门禁，抵达终点。每局都是全新布局，不保存结果。","defaultCaptions":{"x":"QuadPoint 4D：四个同步视图，导航一个随机生成的四维世界。","facebook":"操控 a、b、c、d 四轴上的点，穿过障碍抵达终点。每局重新生成。","reddit":"一个用四个三维投影视图理解四维导航的浏览器游戏。","discord":"QuadPoint 4D — 每局随机生成，四视图同步，零存档。"},"assets":{"og":"assets/share/og.png","favicon":"assets/share/favicon.png"}}
